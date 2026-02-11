@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      wildfly:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  wildfly:
+    image: quay.io/wildfly/wildfly:latest
+    container_name: wildfly-app
+    command: /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0
+    expose:
+      - "8080"
+      - "9990"
+    volumes:
+      - ./wildfly/deployments:/opt/jboss/wildfly/standalone/deployments
+      - ./logs/wildfly:/opt/jboss/wildfly/standalone/log
+    networks:
+      - backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/myproject/module/backend/api/myservice/hello"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    secrets:
+      - wildfly_admin_password
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+
+secrets:
+  wildfly_admin_password:
+    file: ./secrets/wildfly_admin_password.txt
